@@ -16,6 +16,7 @@ package k8sprocessor
 
 import (
 	"context"
+	"github.com/open-telemetry/opentelemetry-collector/component"
 	"testing"
 
 	commonpb "github.com/census-instrumentation/opencensus-proto/gen-go/agent/common/v1"
@@ -155,6 +156,23 @@ func TestAddLabels(t *testing.T) {
 		}
 		i++
 	}
+}
+
+func TestPassthroughStart(t *testing.T) {
+	next := &testConsumer{}
+	opts := []Option{WithPassthrough()}
+
+	p, err := NewTraceProcessor(
+		zap.NewNop(),
+		next,
+		kube.NewFakeClient,
+		opts...
+	)
+	require.NoError(t, err)
+
+	// Just make sure this doesn't fail when Passthrough is enabled
+	p.Start(component.NewMockHost())
+	p.Shutdown()
 }
 
 func fakeClientFromProcessor(t *testing.T, p processor.TraceProcessor) *kube.FakeClient {
