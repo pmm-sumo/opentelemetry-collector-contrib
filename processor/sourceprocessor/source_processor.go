@@ -210,31 +210,29 @@ func (stp *sourceTraceProcessor) ConsumeTraces(ctx context.Context, td pdata.Tra
 		filledAnySource := false
 		filledOtherMeta := false
 
-		if !res.IsNil() {
-			atts := res.Attributes()
+		atts := res.Attributes()
 
-			// TODO: move this to k8sprocessor
-			stp.enrichPodName(&atts)
-			stp.fillOtherMeta(atts)
-			filledOtherMeta = true
+		// TODO: move this to k8sprocessor
+		stp.enrichPodName(&atts)
+		stp.fillOtherMeta(atts)
+		filledOtherMeta = true
 
-			filledAnySource = stp.sourceHostFiller.fillResourceOrUseAnnotation(&atts, stp.annotationAttribute(sourceHostSpecialAnnotation), stp.keys) || filledAnySource
-			filledAnySource = stp.sourceCategoryFiller.fillResourceOrUseAnnotation(&atts, stp.annotationAttribute(sourceCategorySpecialAnnotation), stp.keys) || filledAnySource
-			filledAnySource = stp.sourceNameFiller.fillResourceOrUseAnnotation(&atts, stp.annotationAttribute(sourceNameSpecialAnnotation), stp.keys) || filledAnySource
+		filledAnySource = stp.sourceHostFiller.fillResourceOrUseAnnotation(&atts, stp.annotationAttribute(sourceHostSpecialAnnotation), stp.keys) || filledAnySource
+		filledAnySource = stp.sourceCategoryFiller.fillResourceOrUseAnnotation(&atts, stp.annotationAttribute(sourceCategorySpecialAnnotation), stp.keys) || filledAnySource
+		filledAnySource = stp.sourceNameFiller.fillResourceOrUseAnnotation(&atts, stp.annotationAttribute(sourceNameSpecialAnnotation), stp.keys) || filledAnySource
 
-			ilss := rs.InstrumentationLibrarySpans()
-			totalSpans := 0
-			for j := 0; j < ilss.Len(); j++ {
-				ils := ilss.At(j)
-				totalSpans = ils.Spans().Len()
-			}
+		ilss := rs.InstrumentationLibrarySpans()
+		totalSpans := 0
+		for j := 0; j < ilss.Len(); j++ {
+			ils := ilss.At(j)
+			totalSpans = ils.Spans().Len()
+		}
 
-			if stp.isFilteredOut(atts) {
-				rs.InstrumentationLibrarySpans().Resize(0)
-				observability.RecordFilteredOutN(totalSpans)
-			} else {
-				observability.RecordFilteredInN(totalSpans)
-			}
+		if stp.isFilteredOut(atts) {
+			rs.InstrumentationLibrarySpans().Resize(0)
+			observability.RecordFilteredOutN(totalSpans)
+		} else {
+			observability.RecordFilteredInN(totalSpans)
 		}
 
 		// Perhaps this is coming through Zipkin and in such case the attributes are stored in each span attributes, doh!
