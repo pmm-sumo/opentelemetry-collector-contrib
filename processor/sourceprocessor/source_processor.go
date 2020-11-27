@@ -228,12 +228,11 @@ func (stp *sourceTraceProcessor) ConsumeTraces(ctx context.Context, td pdata.Tra
 			totalSpans = ils.Spans().Len()
 		}
 
-			if stp.isFilteredOut(atts) {
-				rs.InstrumentationLibrarySpans().Resize(0)
-				observability.RecordFilteredOutN(totalSpans)
-			} else {
-				observability.RecordFilteredInN(totalSpans)
-			}
+		if stp.isFilteredOut(atts) {
+			rs.InstrumentationLibrarySpans().Resize(0)
+			observability.RecordFilteredOutN(totalSpans)
+		} else {
+			observability.RecordFilteredInN(totalSpans)
 		}
 
 		// Perhaps this is coming through Zipkin and in such case the attributes are stored in each span attributes, doh!
