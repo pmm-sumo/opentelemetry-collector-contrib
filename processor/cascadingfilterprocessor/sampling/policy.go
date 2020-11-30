@@ -26,6 +26,8 @@ type TraceData struct {
 	sync.Mutex
 	// Decisions gives the current status of the sampling decision for each policy.
 	Decisions []Decision
+	// FinalDecision describes the ultimate fate of the trace
+	FinalDecision Decision
 	// Arrival time the first span for the trace was received.
 	ArrivalTime time.Time
 	// Decisiontime time when sampling decision was taken.
@@ -58,7 +60,7 @@ const (
 	Dropped
 )
 
-// PolicyEvaluator implements a cascading-filter-based sampling policy evaluator,
+// PolicyEvaluator implements a tail-based sampling policy evaluator,
 // which makes a sampling decision for a given trace when requested.
 type PolicyEvaluator interface {
 	// OnLateArrivingSpans notifies the evaluator that the given list of spans arrived
@@ -69,11 +71,4 @@ type PolicyEvaluator interface {
 
 	// Evaluate looks at the trace data and returns a corresponding SamplingDecision.
 	Evaluate(traceID pdata.TraceID, trace *TraceData) (Decision, error)
-
-	// EvaluateSecondChance looks at the trace again and if it can/cannot be fit, returns a SamplingDecision
-	EvaluateSecondChance(traceID pdata.TraceID, trace *TraceData) (Decision, error)
-
-	// OnDroppedSpans is called when the trace needs to be dropped, due to memory
-	// pressure, before the decision_wait time has been reached.
-	OnDroppedSpans(traceID pdata.TraceID, trace *TraceData) (Decision, error)
 }

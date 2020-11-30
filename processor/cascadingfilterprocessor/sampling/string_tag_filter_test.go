@@ -18,16 +18,26 @@ import (
 	"math"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.uber.org/zap"
 )
 
+func newStringAttributeFilter() *policyEvaluator {
+	return &policyEvaluator{
+		logger: zap.NewNop(),
+		stringAttr: &stringAttributeFilter{
+			key:    "example",
+			values: map[string]struct{}{"value": {}},
+		},
+		maxSpansPerSecond: math.MaxInt64,
+	}
+}
+
 func TestStringTagFilter(t *testing.T) {
 
 	var empty = map[string]pdata.AttributeValue{}
-	filter := NewStringAttributeFilter(zap.NewNop(), "example", []string{"value"})
+	filter := newStringAttributeFilter()
 
 	cases := []struct {
 		Desc     string
@@ -96,17 +106,8 @@ func newTraceStringAttrs(nodeAttrs map[string]pdata.AttributeValue, spanAttrKey 
 	}
 }
 
-func TestOnDroppedSpans_StringAttribute(t *testing.T) {
-	var empty = map[string]pdata.AttributeValue{}
-	u, _ := uuid.NewRandom()
-	filter := NewStringAttributeFilter(zap.NewNop(), "example", []string{"value"})
-	decision, err := filter.OnDroppedSpans(pdata.NewTraceID(u), newTraceIntAttrs(empty, "example", math.MaxInt32+1))
-	assert.Nil(t, err)
-	assert.Equal(t, decision, NotSampled)
-}
-
 func TestOnLateArrivingSpans_StringAttribute(t *testing.T) {
-	filter := NewStringAttributeFilter(zap.NewNop(), "example", []string{"value"})
+	filter := newStringAttributeFilter()
 	err := filter.OnLateArrivingSpans(NotSampled, nil)
 	assert.Nil(t, err)
 }

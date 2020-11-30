@@ -20,58 +20,18 @@ import (
 	"go.opentelemetry.io/collector/config/configmodels"
 )
 
-// PolicyType indicates the type of sampling policy.
-type PolicyType string
-
-const (
-	// AlwaysSample samples all traces, typically used for debugging.
-	AlwaysSample PolicyType = "always_sample"
-	// NumericAttribute sample traces that have a given numeric attribute in a specified
-	// range, e.g.: attribute "http.status_code" >= 399 and <= 999.
-	NumericAttribute PolicyType = "numeric_attribute"
-	// StringAttribute sample traces that a attribute, of type string, matching
-	// one of the listed values.
-	StringAttribute PolicyType = "string_attribute"
-	// RateLimiting allows all traces until the specified limits are satisfied.
-	RateLimiting PolicyType = "rate_limiting"
-	// Properties allows all traces that conform to specified properties.
-	Properties PolicyType = "properties"
-	// Cascading provides ability to specify several rules organized by priority an with ingestion budget
-	Cascading PolicyType = "cascading"
-)
-
 // PolicyCfg holds the common configuration to all policies.
 type PolicyCfg struct {
 	// Name given to the instance of the policy to make easy to identify it in metrics and logs.
 	Name string `mapstructure:"name"`
-	// Type of the policy this will be used to match the proper configuration of the policy.
-	Type PolicyType `mapstructure:"type"`
-	// Configs for numeric attribute filter sampling policy evaluator.
-	NumericAttributeCfg NumericAttributeCfg `mapstructure:"numeric_attribute"`
-	// Configs for string attribute filter sampling policy evaluator.
-	StringAttributeCfg StringAttributeCfg `mapstructure:"string_attribute"`
-	// Configs for rate limiting filter sampling policy evaluator.
-	RateLimitingCfg RateLimitingCfg `mapstructure:"rate_limiting"`
-	// Configs for properties sampling policy evaluator.
-	PropertiesCfg PropertiesCfg `mapstructure:"properties"`
-	// SpansPerSecond specifies the total budget that should never be exceeded for cascading rule
-	SpansPerSecond int64 `mapstructure:"spans_per_second"`
-	// Rules provide a list of prioritized rules for filling the budgets
-	Rules []CascadingRuleCfg `mapstructure:"rules"`
-}
-
-// CascadingRuleCfg holds specification of a given rule and its budget
-type CascadingRuleCfg struct {
-	// Name, as simple as that
-	Name string `mapstructure:"name"`
-	// SpansPerSecond specifies the budget available for cascading policy rule
-	SpansPerSecond int64 `mapstructure:"spans_per_second"`
 	// Configs for numeric attribute filter sampling policy evaluator.
 	NumericAttributeCfg *NumericAttributeCfg `mapstructure:"numeric_attribute"`
 	// Configs for string attribute filter sampling policy evaluator.
 	StringAttributeCfg *StringAttributeCfg `mapstructure:"string_attribute"`
 	// Configs for properties sampling policy evaluator.
-	PropertiesCfg *PropertiesCfg `mapstructure:"properties"`
+	PropertiesCfg PropertiesCfg `mapstructure:"properties"`
+	// SpansPerSecond specifies the rule budget that should never be exceeded for it
+	SpansPerSecond int64 `mapstructure:"spans_per_second"`
 }
 
 // PropertiesCfg holds the configurable settings to create a duration filter
@@ -104,19 +64,14 @@ type StringAttributeCfg struct {
 	Values []string `mapstructure:"values"`
 }
 
-// RateLimitingCfg holds the configurable settings to create a rate limiting
-// sampling policy evaluator.
-type RateLimitingCfg struct {
-	// SpansPerSecond sets the limit on the maximum nuber of spans that can be processed each second.
-	SpansPerSecond int64 `mapstructure:"spans_per_second"`
-}
-
 // Config holds the configuration for cascading-filter-based sampling.
 type Config struct {
 	configmodels.ProcessorSettings `mapstructure:",squash"`
 	// DecisionWait is the desired wait time from the arrival of the first span of
 	// trace until the decision about sampling it or not is evaluated.
 	DecisionWait time.Duration `mapstructure:"decision_wait"`
+	// SpansPerSecond specifies the total budget that should never be exceeded
+	SpansPerSecond int64 `mapstructure:"spans_per_second"`
 	// NumTraces is the number of traces kept on memory. Typically most of the data
 	// of a trace is released after a sampling decision is taken.
 	NumTraces uint64 `mapstructure:"num_traces"`

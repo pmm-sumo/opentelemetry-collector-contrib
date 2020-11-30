@@ -45,8 +45,9 @@ func createDefaultConfig() configmodels.Processor {
 			TypeVal: typeStr,
 			NameVal: typeStr,
 		},
-		DecisionWait: 30 * time.Second,
-		NumTraces:    50000,
+		DecisionWait:   30 * time.Second,
+		NumTraces:      50000,
+		SpansPerSecond: 1000000,
 	}
 }
 
