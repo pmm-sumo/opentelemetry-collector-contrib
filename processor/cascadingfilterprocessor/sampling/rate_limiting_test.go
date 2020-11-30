@@ -15,21 +15,26 @@
 package sampling
 
 import (
-	"math"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/collector/consumer/pdata"
 	"go.uber.org/zap"
 )
+
+func newRateLimiterFilter(maxRate int64) *policyEvaluator {
+	return &policyEvaluator{
+		logger:            zap.NewNop(),
+		maxSpansPerSecond: maxRate,
+	}
+}
 
 func TestRateLimiter(t *testing.T) {
 	var empty = map[string]pdata.AttributeValue{}
 
 	trace := newTraceStringAttrs(empty, "example", "value")
 	traceID := pdata.NewTraceID([16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})
-	rateLimiter := NewRateLimiting(zap.NewNop(), 3)
+	rateLimiter := newRateLimiterFilter(3)
 
 	// Trace span count greater than spans per second
 	trace.SpanCount = 10
@@ -37,14 +42,14 @@ func TestRateLimiter(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, decision, NotSampled)
 
-	// Trace span count equal to spans per second
-	trace.SpanCount = 3
+	// Trace span count just above to spans per second
+	trace.SpanCount = 4
 	decision, err = rateLimiter.Evaluate(traceID, trace)
 	assert.Nil(t, err)
 	assert.Equal(t, decision, NotSampled)
 
-	// Trace span count less than spans per second
-	trace.SpanCount = 2
+	// Trace span count equal spans per second
+	trace.SpanCount = 3
 	decision, err = rateLimiter.Evaluate(traceID, trace)
 	assert.Nil(t, err)
 	assert.Equal(t, decision, Sampled)
@@ -56,17 +61,8 @@ func TestRateLimiter(t *testing.T) {
 	assert.Equal(t, decision, Sampled)
 }
 
-func TestOnDroppedSpans_RateLimiter(t *testing.T) {
-	var empty = map[string]pdata.AttributeValue{}
-	u, _ := uuid.NewRandom()
-	rateLimiter := NewRateLimiting(zap.NewNop(), 3)
-	decision, err := rateLimiter.OnDroppedSpans(pdata.NewTraceID(u), newTraceIntAttrs(empty, "example", math.MaxInt32+1))
-	assert.Nil(t, err)
-	assert.Equal(t, decision, Sampled)
-}
-
 func TestOnLateArrivingSpans_RateLimiter(t *testing.T) {
-	rateLimiter := NewRateLimiting(zap.NewNop(), 3)
+	rateLimiter := newRateLimiterFilter(3)
 	err := rateLimiter.OnLateArrivingSpans(NotSampled, nil)
 	assert.Nil(t, err)
 }

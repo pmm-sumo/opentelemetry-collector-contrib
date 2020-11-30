@@ -42,7 +42,6 @@ func TestCreateProcessor(t *testing.T) {
 	cfg.PolicyCfgs = []config.PolicyCfg{
 		{
 			Name: "test-policy",
-			Type: config.AlwaysSample,
 		},
 	}
 

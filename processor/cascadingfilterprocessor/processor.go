@@ -16,7 +16,6 @@ package cascadingfilterprocessor
 
 import (
 	"context"
-	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -35,6 +34,7 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/cascadingfilterprocessor/sampling"
 )
 
+// FIXME: rename this to cascadingFilter
 // Policy combines a sampling policy evaluator with the destinations to be
 // used for that policy.
 type Policy struct {
@@ -44,6 +44,12 @@ type Policy struct {
 	Evaluator sampling.PolicyEvaluator
 	// ctx used to carry metric tags of each policy.
 	ctx context.Context
+
+	currentSecond int64
+	// Set maxSpansPerSecond to less than zero to make it opportunistic rule (it will fill
+	// only if there's space after evaluating other ones)
+	maxSpansPerSecond    int64
+	spansInCurrentSecond int64
 }
 
 // traceKey is defined since sync.Map requires a comparable type, isolating it on its own
@@ -64,6 +70,10 @@ type cascadingFilterSpanProcessor struct {
 	decisionBatcher idbatcher.Batcher
 	deleteChan      chan traceKey
 	numTracesOnMap  uint64
+
+	currentSecond        int64
+	maxSpansPerSecond    int64
+	spansInCurrentSecond int64
 }
 
 const (
@@ -77,6 +87,10 @@ func newTraceProcessor(logger *zap.Logger, nextConsumer consumer.TracesConsumer,
 		return nil, componenterror.ErrNilNextConsumer
 	}
 
+	return newCascadingFilterSpanProcessor(logger, nextConsumer, cfg)
+}
+
+func newCascadingFilterSpanProcessor(logger *zap.Logger, nextConsumer consumer.TracesConsumer, cfg config.Config) (*cascadingFilterSpanProcessor, error) {
 	numDecisionBatches := uint64(cfg.DecisionWait.Seconds())
 	inBatcher, err := idbatcher.New(numDecisionBatches, cfg.ExpectedNewTracesPerSec, uint64(2*runtime.NumCPU()))
 	if err != nil {
@@ -104,12 +118,13 @@ func newTraceProcessor(logger *zap.Logger, nextConsumer consumer.TracesConsumer,
 	}
 
 	tsp := &cascadingFilterSpanProcessor{
-		ctx:             ctx,
-		nextConsumer:    nextConsumer,
-		maxNumTraces:    cfg.NumTraces,
-		logger:          logger,
-		decisionBatcher: inBatcher,
-		policies:        policies,
+		ctx:               ctx,
+		nextConsumer:      nextConsumer,
+		maxNumTraces:      cfg.NumTraces,
+		maxSpansPerSecond: cfg.SpansPerSecond,
+		logger:            logger,
+		decisionBatcher:   inBatcher,
+		policies:          policies,
 	}
 
 	tsp.policyTicker = &policyTicker{onTick: tsp.samplingPolicyOnTick}
@@ -119,29 +134,26 @@ func newTraceProcessor(logger *zap.Logger, nextConsumer consumer.TracesConsumer,
 }
 
 func getPolicyEvaluator(logger *zap.Logger, cfg *config.PolicyCfg) (sampling.PolicyEvaluator, error) {
-	switch cfg.Type {
-	case config.AlwaysSample:
-		return sampling.NewAlwaysSample(logger), nil
-	case config.NumericAttribute:
-		nafCfg := cfg.NumericAttributeCfg
-		return sampling.NewNumericAttributeFilter(logger, nafCfg.Key, nafCfg.MinValue, nafCfg.MaxValue), nil
-	case config.StringAttribute:
-		safCfg := cfg.StringAttributeCfg
-		return sampling.NewStringAttributeFilter(logger, safCfg.Key, safCfg.Values), nil
-	case config.RateLimiting:
-		rlfCfg := cfg.RateLimitingCfg
-		return sampling.NewRateLimiting(logger, rlfCfg.SpansPerSecond), nil
-	case config.Cascading:
-		return sampling.NewCascadingFilter(logger, cfg)
-	case config.Properties:
-		return sampling.NewSpanPropertiesFilter(logger, cfg.PropertiesCfg.NamePattern, cfg.PropertiesCfg.MinDurationMicros, cfg.PropertiesCfg.MinNumberOfSpans)
-	default:
-		return nil, fmt.Errorf("unknown sampling policy type %s", cfg.Type)
-	}
+	return sampling.NewFilter(logger, cfg)
 }
 
 type policyMetrics struct {
 	idNotFoundOnMapCount, evaluateErrorCount, decisionSampled, decisionNotSampled int64
+}
+
+func (cp *cascadingFilterSpanProcessor) updateRate(currSecond int64, numSpans int64) sampling.Decision {
+	if cp.currentSecond != currSecond {
+		cp.currentSecond = currSecond
+		cp.spansInCurrentSecond = 0
+	}
+
+	spansInSecondIfSampled := cp.spansInCurrentSecond + numSpans
+	if spansInSecondIfSampled <= cp.maxSpansPerSecond {
+		cp.spansInCurrentSecond = spansInSecondIfSampled
+		return sampling.Sampled
+	}
+
+	return sampling.NotSampled
 }
 
 func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
@@ -152,7 +164,9 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 	batchLen := len(batch)
 	tsp.logger.Debug("Sampling Policy Evaluation ticked")
 
-	// The first run applies decisions to batches
+	currSecond := time.Now().Unix()
+
+	// The first run applies decisions to batches, executing each policy separetely
 	for _, id := range batch {
 		d, ok := tsp.idToTrace.Load(traceKey(id.Bytes()))
 		if !ok {
@@ -162,40 +176,57 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 		trace := d.(*sampling.TraceData)
 		trace.DecisionTime = time.Now()
 
-		_, _ = tsp.makeDecision(id, trace, &metrics)
+		provisionalDecision, _ := tsp.makeProvisionalDecision(id, trace, &metrics)
+		if provisionalDecision == sampling.Sampled {
+			trace.FinalDecision = tsp.updateRate(currSecond, trace.SpanCount)
+			if trace.FinalDecision == sampling.Sampled {
+				_ = stats.RecordWithTags(
+					tsp.ctx,
+					[]tag.Mutator{tag.Insert(tagStatusSampledKey, "Sampled")},
+					statCountTracesSampled.M(int64(1)),
+				)
+			} else {
+				_ = stats.RecordWithTags(
+					tsp.ctx,
+					[]tag.Mutator{tag.Insert(tagStatusRateExceededKey, "Sampled")},
+					statCountTracesSampled.M(int64(1)),
+				)
+			}
+		} else if provisionalDecision == sampling.SecondChance {
+			trace.FinalDecision = sampling.SecondChance
+		} else {
+			trace.FinalDecision = provisionalDecision
+			_ = stats.RecordWithTags(
+				tsp.ctx,
+				[]tag.Mutator{tag.Insert(tagStatusNotSampledKey, "NotSampled")},
+				statCountTracesSampled.M(int64(1)),
+			)
+		}
 	}
 
-	// The second run applies "SecondChance" - we should already know how much space is left
+	// The second run executes the decisions and makes "SecondChance" decisions in the meantime
 	for _, id := range batch {
 		d, ok := tsp.idToTrace.Load(traceKey(id.Bytes()))
 		if !ok {
 			continue
 		}
 		trace := d.(*sampling.TraceData)
-		trace.DecisionTime = time.Now()
-		for i, policy := range tsp.policies {
-			decision := trace.Decisions[i]
-			if decision == sampling.SecondChance {
-				finalDecision, _ := policy.Evaluator.EvaluateSecondChance(id, trace)
-				trace.Decisions[i] = finalDecision
-				if finalDecision == sampling.Sampled {
-					_ = stats.RecordWithTags(
-						policy.ctx,
-						[]tag.Mutator{tag.Insert(tagSampledKey, "second_chance_selected")},
-						statCountTracesSampled.M(int64(1)),
-					)
-				}
+		if trace.FinalDecision == sampling.SecondChance {
+			trace.FinalDecision = tsp.updateRate(currSecond, trace.SpanCount)
+			if trace.FinalDecision == sampling.Sampled {
+				_ = stats.RecordWithTags(
+					tsp.ctx,
+					[]tag.Mutator{tag.Insert(tagStatusSampledKey, "SecondChance")},
+					statCountTracesSampled.M(int64(1)),
+				)
+			} else {
+				_ = stats.RecordWithTags(
+					tsp.ctx,
+					[]tag.Mutator{tag.Insert(tagStatusRateExceededKey, "SecondChance")},
+					statCountTracesSampled.M(int64(1)),
+				)
 			}
 		}
-	}
-
-	// The third run executes the decisions
-	for _, id := range batch {
-		d, ok := tsp.idToTrace.Load(traceKey(id.Bytes()))
-		if !ok {
-			continue
-		}
-		trace := d.(*sampling.TraceData)
 
 		// Sampled or not, remove the batches
 		trace.Lock()
@@ -203,32 +234,25 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 		trace.ReceivedBatches = nil
 		trace.Unlock()
 
-		isSampled := false
-		for i, policy := range tsp.policies {
+		if trace.FinalDecision == sampling.Sampled {
+			metrics.decisionSampled++
 
-			if trace.Decisions[i] == sampling.Sampled && !isSampled {
-				metrics.decisionSampled++
-				isSampled = true
-
-				// Combine all individual batches into a single batch so
-				// consumers may operate on the entire trace
-				allSpans := pdata.NewTraces()
-				for j := 0; j < len(traceBatches); j++ {
-					batch := traceBatches[j]
-					batch.ResourceSpans().MoveAndAppendTo(allSpans.ResourceSpans())
-				}
-
-				_ = tsp.nextConsumer.ConsumeTraces(policy.ctx, allSpans)
+			// Combine all individual batches into a single batch so
+			// consumers may operate on the entire trace
+			allSpans := pdata.NewTraces()
+			for j := 0; j < len(traceBatches); j++ {
+				batch := traceBatches[j]
+				batch.ResourceSpans().MoveAndAppendTo(allSpans.ResourceSpans())
 			}
-		}
 
-		if !isSampled {
+			_ = tsp.nextConsumer.ConsumeTraces(tsp.ctx, allSpans)
+		} else {
 			metrics.decisionNotSampled++
 		}
 	}
 
 	stats.Record(tsp.ctx,
-		statOverallDecisionLatencyµs.M(int64(time.Since(startTime)/time.Microsecond)),
+		statOverallDecisionLatencyus.M(int64(time.Since(startTime)/time.Microsecond)),
 		statDroppedTooEarlyCount.M(metrics.idNotFoundOnMapCount),
 		statPolicyEvaluationErrorCount.M(metrics.evaluateErrorCount),
 		statTracesOnMemoryGauge.M(int64(atomic.LoadUint64(&tsp.numTracesOnMap))))
@@ -242,8 +266,8 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 	)
 }
 
-func (tsp *cascadingFilterSpanProcessor) makeDecision(id pdata.TraceID, trace *sampling.TraceData, metrics *policyMetrics) (sampling.Decision, *Policy) {
-	finalDecision := sampling.NotSampled
+func (tsp *cascadingFilterSpanProcessor) makeProvisionalDecision(id pdata.TraceID, trace *sampling.TraceData, metrics *policyMetrics) (sampling.Decision, *Policy) {
+	provisionalDecision := sampling.Unspecified
 	var matchingPolicy *Policy = nil
 
 	for i, policy := range tsp.policies {
@@ -264,33 +288,40 @@ func (tsp *cascadingFilterSpanProcessor) makeDecision(id pdata.TraceID, trace *s
 			case sampling.Sampled:
 				// any single policy that decides to sample will cause the decision to be sampled
 				// the nextConsumer will get the context from the first matching policy
-				finalDecision = sampling.Sampled
+				provisionalDecision = sampling.Sampled
 				if matchingPolicy == nil {
 					matchingPolicy = policy
 				}
 
 				_ = stats.RecordWithTags(
 					policy.ctx,
-					[]tag.Mutator{tag.Insert(tagSampledKey, "true")},
+					[]tag.Mutator{tag.Insert(tagSelectedKey, "true")},
 					statCountTracesSampled.M(int64(1)),
 				)
 			case sampling.NotSampled:
+				if provisionalDecision == sampling.Unspecified {
+					provisionalDecision = sampling.NotSampled
+				}
 				_ = stats.RecordWithTags(
 					policy.ctx,
-					[]tag.Mutator{tag.Insert(tagSampledKey, "false")},
+					[]tag.Mutator{tag.Insert(tagSelectedKey, "false")},
 					statCountTracesSampled.M(int64(1)),
 				)
 			case sampling.SecondChance:
+				if provisionalDecision != sampling.Sampled {
+					provisionalDecision = sampling.SecondChance
+				}
+
 				_ = stats.RecordWithTags(
 					policy.ctx,
-					[]tag.Mutator{tag.Insert(tagSampledKey, "second_chance")},
+					[]tag.Mutator{tag.Insert(tagSelectedKey, "second_chance")},
 					statCountTracesSampled.M(int64(1)),
 				)
 			}
 		}
 	}
 
-	return finalDecision, matchingPolicy
+	return provisionalDecision, matchingPolicy
 }
 
 // ConsumeTraceData is required by the SpanProcessor interface.
@@ -450,19 +481,8 @@ func (tsp *cascadingFilterSpanProcessor) dropTrace(traceID traceKey, deletionTim
 		tsp.logger.Error("Attempt to delete traceID not on table")
 		return
 	}
-	policiesLen := len(tsp.policies)
+
 	stats.Record(tsp.ctx, statTraceRemovalAgeSec.M(int64(deletionTime.Sub(trace.ArrivalTime)/time.Second)))
-	for j := 0; j < policiesLen; j++ {
-		if trace.Decisions[j] == sampling.Pending {
-			policy := tsp.policies[j]
-			if decision, err := policy.Evaluator.OnDroppedSpans(pdata.NewTraceID(traceID), trace); err != nil {
-				tsp.logger.Warn("OnDroppedSpans",
-					zap.String("policy", policy.Name),
-					zap.Int("decision", int(decision)),
-					zap.Error(err))
-			}
-		}
-	}
 }
 
 func prepareTraceBatch(rss pdata.ResourceSpans, spans []*pdata.Span) pdata.Traces {

@@ -20,18 +20,19 @@ import (
 	"go.opencensus.io/tag"
 	"go.opentelemetry.io/collector/config/configtelemetry"
 	"go.opentelemetry.io/collector/obsreport"
-
-	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/cascadingfilterprocessor/sampling"
 )
 
 // Variables related to metrics specific to Cascading Filter.
 var (
-	tagPolicyKey, _    = tag.NewKey("policy")
-	tagSampledKey, _   = tag.NewKey("sampled")
-	tagSourceFormat, _ = tag.NewKey("source_format")
+	tagPolicyKey, _             = tag.NewKey("policy")
+	tagStatusSampledKey, _      = tag.NewKey("status_sampled")
+	tagStatusRateExceededKey, _ = tag.NewKey("status_rate_exceeded")
+	tagStatusNotSampledKey, _   = tag.NewKey("status_not_sampled")
+	tagSelectedKey, _           = tag.NewKey("not_sampled")
+	tagSourceFormat, _          = tag.NewKey("source_format")
 
 	statDecisionLatencyMicroSec  = stats.Int64("sampling_decision_latency", "Latency (in microseconds) of a given sampling policy", "µs")
-	statOverallDecisionLatencyµs = stats.Int64("sampling_decision_timer_latency", "Latency (in microseconds) of each run of the sampling decision timer", "µs")
+	statOverallDecisionLatencyus = stats.Int64("sampling_decision_timer_latency", "Latency (in microseconds) of each run of the sampling decision timer", "µs")
 
 	statTraceRemovalAgeSec           = stats.Int64("sampling_trace_removal_age", "Time (in seconds) from arrival of a new trace until its removal from memory", "s")
 	statLateSpanArrivalAfterDecision = stats.Int64("sampling_late_span_age", "Time (in seconds) from the sampling decision was taken and the arrival of a late span", "s")
@@ -69,9 +70,9 @@ func SamplingProcessorMetricViews(level configtelemetry.Level) []*view.View {
 		Aggregation: latencyDistributionAggregation,
 	}
 	overallDecisionLatencyView := &view.View{
-		Name:        statOverallDecisionLatencyµs.Name(),
-		Measure:     statOverallDecisionLatencyµs,
-		Description: statOverallDecisionLatencyµs.Description(),
+		Name:        statOverallDecisionLatencyus.Name(),
+		Measure:     statOverallDecisionLatencyus,
+		Description: statOverallDecisionLatencyus.Description(),
 		Aggregation: latencyDistributionAggregation,
 	}
 
@@ -95,12 +96,39 @@ func SamplingProcessorMetricViews(level configtelemetry.Level) []*view.View {
 		Aggregation: view.Sum(),
 	}
 
-	sampledTagKeys := []tag.Key{tagPolicyKey, tagSampledKey}
+	rateExceededTagKeys := []tag.Key{tagPolicyKey, tagStatusRateExceededKey}
+	countRateExceededSampledView := &view.View{
+		Name:        statCountTracesSampled.Name(),
+		Measure:     statCountTracesSampled,
+		Description: statCountTracesSampled.Description(),
+		TagKeys:     rateExceededTagKeys,
+		Aggregation: view.Sum(),
+	}
+
+	notSampledTagKeys := []tag.Key{tagPolicyKey, tagStatusNotSampledKey}
+	countTracesNotSampledView := &view.View{
+		Name:        statCountTracesSampled.Name(),
+		Measure:     statCountTracesSampled,
+		Description: statCountTracesSampled.Description(),
+		TagKeys:     notSampledTagKeys,
+		Aggregation: view.Sum(),
+	}
+
+	sampledTagKeys := []tag.Key{tagPolicyKey, tagStatusSampledKey}
 	countTracesSampledView := &view.View{
 		Name:        statCountTracesSampled.Name(),
 		Measure:     statCountTracesSampled,
 		Description: statCountTracesSampled.Description(),
 		TagKeys:     sampledTagKeys,
+		Aggregation: view.Sum(),
+	}
+
+	selectedTagKeys := []tag.Key{tagPolicyKey, tagSelectedKey}
+	countSelectedPoliciesView := &view.View{
+		Name:        statCountTracesSampled.Name(),
+		Measure:     statCountTracesSampled,
+		Description: statCountTracesSampled.Description(),
+		TagKeys:     selectedTagKeys,
 		Aggregation: view.Sum(),
 	}
 
@@ -133,12 +161,13 @@ func SamplingProcessorMetricViews(level configtelemetry.Level) []*view.View {
 		countPolicyEvaluationErrorView,
 
 		countTracesSampledView,
+		countTracesNotSampledView,
+		countRateExceededSampledView,
+		countSelectedPoliciesView,
 
 		countTraceDroppedTooEarlyView,
 		countTraceIDArrivalView,
 		trackTracesOnMemorylView,
-
-		sampling.CountTracesSampledRulesView,
 	}
 
 	return obsreport.ProcessorMetricViews(typeStr, legacyViews)

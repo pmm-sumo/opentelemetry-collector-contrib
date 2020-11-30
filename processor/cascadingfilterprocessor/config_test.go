@@ -36,7 +36,7 @@ func TestLoadConfig(t *testing.T) {
 	factories.Processors[factory.Type()] = factory
 
 	cfg, err := configtest.LoadConfigFile(t, path.Join(".", "testdata", "cascading_filter_config.yaml"), factories)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
 	minDurationValue := int64(9000000)
@@ -52,58 +52,46 @@ func TestLoadConfig(t *testing.T) {
 			DecisionWait:            10 * time.Second,
 			NumTraces:               100,
 			ExpectedNewTracesPerSec: 10,
+			SpansPerSecond:          1000,
 			PolicyCfgs: []config.PolicyCfg{
 				{
 					Name: "test-policy-1",
-					Type: config.AlwaysSample,
 				},
 				{
 					Name:                "test-policy-2",
-					Type:                config.NumericAttribute,
-					NumericAttributeCfg: config.NumericAttributeCfg{Key: "key1", MinValue: 50, MaxValue: 100},
+					NumericAttributeCfg: &config.NumericAttributeCfg{Key: "key1", MinValue: 50, MaxValue: 100},
 				},
 				{
 					Name:               "test-policy-3",
-					Type:               config.StringAttribute,
-					StringAttributeCfg: config.StringAttributeCfg{Key: "key2", Values: []string{"value1", "value2"}},
+					StringAttributeCfg: &config.StringAttributeCfg{Key: "key2", Values: []string{"value1", "value2"}},
 				},
 				{
-					Name:            "test-policy-4",
-					Type:            config.RateLimiting,
-					RateLimitingCfg: config.RateLimitingCfg{SpansPerSecond: 35},
+					Name:           "test-policy-4",
+					SpansPerSecond: 35,
 				},
 				{
 					Name:           "test-policy-5",
-					Type:           config.Cascading,
-					SpansPerSecond: 1000,
-					Rules: []config.CascadingRuleCfg{
-						{
-							Name:           "num",
-							SpansPerSecond: 123,
-							NumericAttributeCfg: &config.NumericAttributeCfg{
-								Key: "key1", MinValue: 50, MaxValue: 100},
-						},
-						{
-							Name:           "dur",
-							SpansPerSecond: 50,
-							PropertiesCfg: &config.PropertiesCfg{
-								MinDurationMicros: &minDurationValue,
-							},
-						},
-						{
-							Name:           "everything_else",
-							SpansPerSecond: -1,
-						},
-					},
+					SpansPerSecond: 123,
+					NumericAttributeCfg: &config.NumericAttributeCfg{
+						Key: "key1", MinValue: 50, MaxValue: 100},
 				},
 				{
-					Name: "test-policy-6",
-					Type: config.Properties,
+					Name:           "test-policy-6",
+					SpansPerSecond: 50,
+
+					PropertiesCfg: config.PropertiesCfg{MinDurationMicros: &minDurationValue},
+				},
+				{
+					Name: "test-policy-7",
 					PropertiesCfg: config.PropertiesCfg{
 						NamePattern:       &namePatternValue,
 						MinDurationMicros: &minDurationValue,
 						MinNumberOfSpans:  &minSpansValue,
 					},
+				},
+				{
+					Name:           "everything_else",
+					SpansPerSecond: -1,
 				},
 			},
 		})
