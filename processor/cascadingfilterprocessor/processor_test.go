@@ -17,15 +17,14 @@ package cascadingfilterprocessor
 import (
 	"context"
 	"errors"
-	"go.opentelemetry.io/collector/consumer/consumertest"
 	"sort"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/consumer/pdata"
-	"go.opentelemetry.io/collector/exporter/exportertest"
 	tracetranslator "go.opentelemetry.io/collector/translator/trace"
 	"go.uber.org/zap"
 
@@ -51,7 +50,7 @@ func TestSequentialTraceArrival(t *testing.T) {
 		ExpectedNewTracesPerSec: 64,
 		PolicyCfgs:              testPolicy,
 	}
-	sp, _ := newTraceProcessor(zap.NewNop(), exportertest.NewNopTraceExporter(), cfg)
+	sp, _ := newTraceProcessor(zap.NewNop(), consumertest.NewTracesNop(), cfg)
 	tsp := sp.(*cascadingFilterSpanProcessor)
 	for _, batch := range batches {
 		tsp.ConsumeTraces(context.Background(), batch)
@@ -75,7 +74,7 @@ func TestConcurrentTraceArrival(t *testing.T) {
 		ExpectedNewTracesPerSec: 64,
 		PolicyCfgs:              testPolicy,
 	}
-	sp, _ := newTraceProcessor(zap.NewNop(), exportertest.NewNopTraceExporter(), cfg)
+	sp, _ := newTraceProcessor(zap.NewNop(), consumertest.NewTracesNop(), cfg)
 	tsp := sp.(*cascadingFilterSpanProcessor)
 	for _, batch := range batches {
 		// Add the same traceId twice.
@@ -109,7 +108,7 @@ func TestSequentialTraceMapSize(t *testing.T) {
 		ExpectedNewTracesPerSec: 64,
 		PolicyCfgs:              testPolicy,
 	}
-	sp, _ := newTraceProcessor(zap.NewNop(), exportertest.NewNopTraceExporter(), cfg)
+	sp, _ := newTraceProcessor(zap.NewNop(), consumertest.NewTracesNop(), cfg)
 	tsp := sp.(*cascadingFilterSpanProcessor)
 	for _, batch := range batches {
 		tsp.ConsumeTraces(context.Background(), batch)
@@ -132,7 +131,7 @@ func TestConcurrentTraceMapSize(t *testing.T) {
 		ExpectedNewTracesPerSec: 64,
 		PolicyCfgs:              testPolicy,
 	}
-	sp, _ := newTraceProcessor(zap.NewNop(), exportertest.NewNopTraceExporter(), cfg)
+	sp, _ := newTraceProcessor(zap.NewNop(), consumertest.NewTracesNop(), cfg)
 	tsp := sp.(*cascadingFilterSpanProcessor)
 	for _, batch := range batches {
 		wg.Add(1)

@@ -31,6 +31,10 @@ const (
 	typeStr = "cascading_filter"
 )
 
+var (
+	defaultProbabilisticFilteringRatio = float32(0.2)
+)
+
 // NewFactory returns a new factory for the Cascading Filter processor.
 func NewFactory() component.ProcessorFactory {
 	return processorhelper.NewFactory(
@@ -45,9 +49,10 @@ func createDefaultConfig() configmodels.Processor {
 			TypeVal: typeStr,
 			NameVal: typeStr,
 		},
-		DecisionWait:   30 * time.Second,
-		NumTraces:      50000,
-		SpansPerSecond: 1000000,
+		DecisionWait:                30 * time.Second,
+		NumTraces:                   50000,
+		SpansPerSecond:              1500,
+		ProbabilisticFilteringRatio: &defaultProbabilisticFilteringRatio,
 	}
 }
 

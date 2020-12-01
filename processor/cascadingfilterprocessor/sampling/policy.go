@@ -28,6 +28,8 @@ type TraceData struct {
 	Decisions []Decision
 	// FinalDecision describes the ultimate fate of the trace
 	FinalDecision Decision
+	// SelectedByProbabilisticFilter determines if this trace was selected by probabilistic filter
+	SelectedByProbabilisticFilter bool
 	// Arrival time the first span for the trace was received.
 	ArrivalTime time.Time
 	// Decisiontime time when sampling decision was taken.

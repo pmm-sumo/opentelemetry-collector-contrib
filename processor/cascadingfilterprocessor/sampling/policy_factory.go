@@ -80,6 +80,16 @@ func createStringAttributeFilter(cfg *config.StringAttributeCfg) *stringAttribut
 	}
 }
 
+// NewProbabilisticFilter creates a policy evaluator intended for selecting samples probabilistically
+func NewProbabilisticFilter(logger *zap.Logger, maxSpanRate int64) (*policyEvaluator, error) {
+	return &policyEvaluator{
+		logger:               logger,
+		currentSecond:        0,
+		spansInCurrentSecond: 0,
+		maxSpansPerSecond:    maxSpanRate,
+	}, nil
+}
+
 // NewFilter creates a policy evaluator that samples all traces with the specified criteria
 func NewFilter(logger *zap.Logger, cfg *config.PolicyCfg) (*policyEvaluator, error) {
 	numericAttrFilter := createNumericAttributeFilter(cfg.NumericAttributeCfg)

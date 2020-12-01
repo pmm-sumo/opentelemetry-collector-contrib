@@ -72,6 +72,9 @@ type Config struct {
 	DecisionWait time.Duration `mapstructure:"decision_wait"`
 	// SpansPerSecond specifies the total budget that should never be exceeded
 	SpansPerSecond int64 `mapstructure:"spans_per_second"`
+	// ProbabilisticFilteringRatio describes which part (0.0-1.0) of the SpansPerSecond budget
+	// is exclusively allocated for probabilistically selected spans
+	ProbabilisticFilteringRatio *float32 `mapstructure:"probabilistic_filtering_ratio"`
 	// NumTraces is the number of traces kept on memory. Typically most of the data
 	// of a trace is released after a sampling decision is taken.
 	NumTraces uint64 `mapstructure:"num_traces"`
