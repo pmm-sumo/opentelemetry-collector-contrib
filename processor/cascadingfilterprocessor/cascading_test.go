@@ -35,6 +35,7 @@ var cfg = tsconfig.Config{
 	DecisionWait:            2 * time.Second,
 	NumTraces:               100,
 	ExpectedNewTracesPerSec: 100,
+	SpansPerSecond:          1000,
 	PolicyCfgs: []tsconfig.PolicyCfg{
 		{
 			Name:           "duration",
@@ -59,7 +60,7 @@ func fillSpan(span *pdata.Span, durationMicros int64) {
 	span.SetEndTime(pdata.TimestampUnixNano(nowTs))
 }
 
-func createTrace(numSpans int, durationMicros int64) *sampling.TraceData {
+func createTrace(fsp *cascadingFilterSpanProcessor, numSpans int, durationMicros int64) *sampling.TraceData {
 	var traceBatches []pdata.Traces
 
 	traces := pdata.NewTraces()
@@ -80,7 +81,7 @@ func createTrace(numSpans int, durationMicros int64) *sampling.TraceData {
 
 	return &sampling.TraceData{
 		Mutex:           sync.Mutex{},
-		Decisions:       make([]sampling.Decision, len(cfg.PolicyCfgs)),
+		Decisions:       make([]sampling.Decision, len(fsp.policies)),
 		ArrivalTime:     time.Time{},
 		DecisionTime:    time.Time{},
 		SpanCount:       int64(numSpans),
@@ -89,7 +90,6 @@ func createTrace(numSpans int, durationMicros int64) *sampling.TraceData {
 }
 
 func createCascadingEvaluator(t *testing.T) *cascadingFilterSpanProcessor {
-
 	cascading, err := newCascadingFilterSpanProcessor(zap.NewNop(), nil, cfg)
 	assert.NoError(t, err)
 	return cascading
@@ -102,25 +102,44 @@ var (
 func TestSampling(t *testing.T) {
 	cascading := createCascadingEvaluator(t)
 
-	decision, _ := cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{0}), createTrace(8, 1000000), metrics)
+	decision, _ := cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{0}), createTrace(cascading, 8, 1000000), metrics)
 	require.Equal(t, sampling.Sampled, decision)
 
-	decision, _ = cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{1}), createTrace(8, 1000000), metrics)
+	decision, _ = cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{1}), createTrace(cascading, 1000, 1000), metrics)
 	require.Equal(t, sampling.SecondChance, decision)
 }
 
 func TestSecondChanceEvaluation(t *testing.T) {
 	cascading := createCascadingEvaluator(t)
 
-	decision, _ := cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{0}), createTrace(8, 1000), metrics)
+	decision, _ := cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{0}), createTrace(cascading, 8, 1000), metrics)
 	require.Equal(t, sampling.SecondChance, decision)
 
-	decision, _ = cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{1}), createTrace(8, 1000), metrics)
+	decision, _ = cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{1}), createTrace(cascading, 8, 1000), metrics)
 	require.Equal(t, sampling.SecondChance, decision)
 
 	// TODO: This could me optimized to make a decision within cascadingfilter processor, as such span would never fit anyway
 	//decision, _ = cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{1}), createTrace(8000, 1000), metrics)
 	//require.Equal(t, sampling.NotSampled, decision)
+}
+
+func TestProbabilisticFilter(t *testing.T) {
+	ratio := float32(0.5)
+	cfg.ProbabilisticFilteringRatio = &ratio
+	cascading := createCascadingEvaluator(t)
+
+	trace1 := createTrace(cascading, 8, 1000000)
+	decision, _ := cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{0}), trace1, metrics)
+	require.Equal(t, sampling.Sampled, decision)
+	require.True(t, trace1.SelectedByProbabilisticFilter)
+
+	trace2 := createTrace(cascading, 800, 1000000)
+	decision, _ = cascading.makeProvisionalDecision(pdata.NewTraceID([16]byte{1}), trace2, metrics)
+	require.Equal(t, sampling.SecondChance, decision)
+	require.False(t, trace2.SelectedByProbabilisticFilter)
+
+	ratio = float32(0.0)
+	cfg.ProbabilisticFilteringRatio = &ratio
 }
 
 //func TestSecondChanceReevaluation(t *testing.T) {

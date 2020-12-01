@@ -41,6 +41,7 @@ func TestLoadConfig(t *testing.T) {
 
 	minDurationValue := int64(9000000)
 	minSpansValue := 10
+	probFilteringRatio := float32(0.1)
 	namePatternValue := "foo.*"
 
 	assert.Equal(t, cfg.Processors["cascading_filter"],
@@ -49,10 +50,11 @@ func TestLoadConfig(t *testing.T) {
 				TypeVal: "cascading_filter",
 				NameVal: "cascading_filter",
 			},
-			DecisionWait:            10 * time.Second,
-			NumTraces:               100,
-			ExpectedNewTracesPerSec: 10,
-			SpansPerSecond:          1000,
+			DecisionWait:                10 * time.Second,
+			NumTraces:                   100,
+			ExpectedNewTracesPerSec:     10,
+			SpansPerSecond:              1000,
+			ProbabilisticFilteringRatio: &probFilteringRatio,
 			PolicyCfgs: []config.PolicyCfg{
 				{
 					Name: "test-policy-1",

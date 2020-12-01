@@ -16,6 +16,7 @@ package cascadingfilterprocessor
 
 import (
 	"context"
+	"go.opentelemetry.io/collector/translator/conventions"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -34,7 +35,6 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/cascadingfilterprocessor/sampling"
 )
 
-// FIXME: rename this to cascadingFilter
 // Policy combines a sampling policy evaluator with the destinations to be
 // used for that policy.
 type Policy struct {
@@ -44,12 +44,8 @@ type Policy struct {
 	Evaluator sampling.PolicyEvaluator
 	// ctx used to carry metric tags of each policy.
 	ctx context.Context
-
-	currentSecond int64
-	// Set maxSpansPerSecond to less than zero to make it opportunistic rule (it will fill
-	// only if there's space after evaluating other ones)
-	maxSpansPerSecond    int64
-	spansInCurrentSecond int64
+	// probabilisticFilter determines whether `sampling.probability` field must be calculated and added
+	probabilisticFilter bool
 }
 
 // traceKey is defined since sync.Map requires a comparable type, isolating it on its own
@@ -77,7 +73,8 @@ type cascadingFilterSpanProcessor struct {
 }
 
 const (
-	sourceFormat = "cascading_filter"
+	sourceFormat                  = "cascading_filter"
+	probabilisticFilterPolicyName = "probabilistic_filter"
 )
 
 // newTraceProcessor returns a processor.TraceProcessor that will perform Cascading Filter according to the given
@@ -99,6 +96,26 @@ func newCascadingFilterSpanProcessor(logger *zap.Logger, nextConsumer consumer.T
 
 	ctx := context.Background()
 	var policies []*Policy
+
+	// This must be always first as it must select traces independently of other policies
+	if cfg.ProbabilisticFilteringRatio != nil && *cfg.ProbabilisticFilteringRatio > 0.0 {
+		policyCtx, err := tag.New(ctx, tag.Upsert(tagPolicyKey, probabilisticFilterPolicyName), tag.Upsert(tagSourceFormat, sourceFormat))
+		if err != nil {
+			return nil, err
+		}
+		eval, err := getProbabilisticFilterEvaluator(logger, int64(float32(cfg.SpansPerSecond)**cfg.ProbabilisticFilteringRatio))
+		if err != nil {
+			return nil, err
+		}
+		policy := &Policy{
+			Name:                probabilisticFilterPolicyName,
+			Evaluator:           eval,
+			ctx:                 policyCtx,
+			probabilisticFilter: true,
+		}
+		policies = append(policies, policy)
+	}
+
 	for i := range cfg.PolicyCfgs {
 		policyCfg := &cfg.PolicyCfgs[i]
 		policyCtx, err := tag.New(ctx, tag.Upsert(tagPolicyKey, policyCfg.Name), tag.Upsert(tagSourceFormat, sourceFormat))
@@ -110,9 +127,10 @@ func newCascadingFilterSpanProcessor(logger *zap.Logger, nextConsumer consumer.T
 			return nil, err
 		}
 		policy := &Policy{
-			Name:      policyCfg.Name,
-			Evaluator: eval,
-			ctx:       policyCtx,
+			Name:                policyCfg.Name,
+			Evaluator:           eval,
+			ctx:                 policyCtx,
+			probabilisticFilter: false,
 		}
 		policies = append(policies, policy)
 	}
@@ -135,6 +153,10 @@ func newCascadingFilterSpanProcessor(logger *zap.Logger, nextConsumer consumer.T
 
 func getPolicyEvaluator(logger *zap.Logger, cfg *config.PolicyCfg) (sampling.PolicyEvaluator, error) {
 	return sampling.NewFilter(logger, cfg)
+}
+
+func getProbabilisticFilterEvaluator(logger *zap.Logger, maxSpanRate int64) (sampling.PolicyEvaluator, error) {
+	return sampling.NewProbabilisticFilter(logger, maxSpanRate)
 }
 
 type policyMetrics struct {
@@ -166,6 +188,9 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 
 	currSecond := time.Now().Unix()
 
+	totalSpans := int64(0)
+	selectedByProbabilisticFilterSpans := int64(0)
+
 	// The first run applies decisions to batches, executing each policy separetely
 	for _, id := range batch {
 		d, ok := tsp.idToTrace.Load(traceKey(id.Bytes()))
@@ -175,11 +200,15 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 		}
 		trace := d.(*sampling.TraceData)
 		trace.DecisionTime = time.Now()
+		totalSpans += trace.SpanCount
 
 		provisionalDecision, _ := tsp.makeProvisionalDecision(id, trace, &metrics)
 		if provisionalDecision == sampling.Sampled {
 			trace.FinalDecision = tsp.updateRate(currSecond, trace.SpanCount)
 			if trace.FinalDecision == sampling.Sampled {
+				if trace.SelectedByProbabilisticFilter {
+					selectedByProbabilisticFilterSpans += trace.SpanCount
+				}
 				_ = stats.RecordWithTags(
 					tsp.ctx,
 					[]tag.Mutator{tag.Insert(tagStatusSampledKey, "Sampled")},
@@ -245,6 +274,10 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 				batch.ResourceSpans().MoveAndAppendTo(allSpans.ResourceSpans())
 			}
 
+			if trace.SelectedByProbabilisticFilter {
+				updateProbabilisticRateTag(allSpans, selectedByProbabilisticFilterSpans, totalSpans)
+			}
+
 			_ = tsp.nextConsumer.ConsumeTraces(tsp.ctx, allSpans)
 		} else {
 			metrics.decisionNotSampled++
@@ -264,6 +297,28 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 		zap.Int64("droppedPriorToEvaluation", metrics.idNotFoundOnMapCount),
 		zap.Int64("policyEvaluationErrors", metrics.evaluateErrorCount),
 	)
+}
+
+func updateProbabilisticRateTag(traces pdata.Traces, probabilisticSpans int64, allSpans int64) {
+	ratio := float64(probabilisticSpans) / float64(allSpans)
+
+	rs := traces.ResourceSpans()
+
+	for i := 0; i < rs.Len(); i++ {
+		ils := rs.At(i).InstrumentationLibrarySpans()
+		for j := 0; j < ils.Len(); j++ {
+			spans := ils.At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				attrs := spans.At(k).Attributes()
+				av, found := attrs.Get(conventions.AttributeSamplingProbability)
+				if found && av.Type() == pdata.AttributeValueDOUBLE {
+					av.SetDoubleVal(av.DoubleVal() * ratio)
+				} else {
+					attrs.UpsertDouble(conventions.AttributeSamplingProbability, ratio)
+				}
+			}
+		}
+	}
 }
 
 func (tsp *cascadingFilterSpanProcessor) makeProvisionalDecision(id pdata.TraceID, trace *sampling.TraceData, metrics *policyMetrics) (sampling.Decision, *Policy) {
@@ -291,6 +346,10 @@ func (tsp *cascadingFilterSpanProcessor) makeProvisionalDecision(id pdata.TraceI
 				provisionalDecision = sampling.Sampled
 				if matchingPolicy == nil {
 					matchingPolicy = policy
+				}
+
+				if policy.probabilisticFilter {
+					trace.SelectedByProbabilisticFilter = true
 				}
 
 				_ = stats.RecordWithTags(
