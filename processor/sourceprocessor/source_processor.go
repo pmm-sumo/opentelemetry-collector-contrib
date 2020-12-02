@@ -76,7 +76,7 @@ type sourceTraceProcessor struct {
 	excludePodRegex       *regexp.Regexp
 	excludeContainerRegex *regexp.Regexp
 	excludeHostRegex      *regexp.Regexp
-	nextConsumer          consumer.TraceConsumer
+	nextConsumer          consumer.TracesConsumer
 	keys                  sourceTraceKeys
 }
 
@@ -123,7 +123,7 @@ func matchRegexMaybe(re *regexp.Regexp, atts pdata.AttributeMap, attributeName s
 	return false
 }
 
-func newSourceTraceProcessor(next consumer.TraceConsumer, cfg *Config) (*sourceTraceProcessor, error) {
+func newSourceTraceProcessor(next consumer.TracesConsumer, cfg *Config) (*sourceTraceProcessor, error) {
 	keys := sourceTraceKeys{
 		annotationPrefix:   cfg.AnnotationPrefix,
 		containerKey:       cfg.ContainerKey,
@@ -203,9 +203,6 @@ func (stp *sourceTraceProcessor) ConsumeTraces(ctx context.Context, td pdata.Tra
 		observability.RecordResourceSpansProcessed()
 
 		rs := rss.At(i)
-		if rs.IsNil() {
-			continue
-		}
 		res := rs.Resource()
 		filledAnySource := false
 		filledOtherMeta := false
@@ -240,17 +237,11 @@ func (stp *sourceTraceProcessor) ConsumeTraces(ctx context.Context, td pdata.Tra
 			ilss := rs.InstrumentationLibrarySpans()
 			for j := 0; j < ilss.Len(); j++ {
 				ils := ilss.At(j)
-				if ils.IsNil() {
-					continue
-				}
 				inputSpans := ils.Spans()
 				outputSpans := pdata.NewSpanSlice()
 
 				for k := 0; k < inputSpans.Len(); k++ {
 					s := inputSpans.At(k)
-					if s.IsNil() {
-						continue
-					}
 					atts := s.Attributes()
 
 					// TODO: move this to k8sprocessor
