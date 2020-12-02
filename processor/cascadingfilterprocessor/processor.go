@@ -16,11 +16,12 @@ package cascadingfilterprocessor
 
 import (
 	"context"
-	"go.opentelemetry.io/collector/translator/conventions"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"go.opentelemetry.io/collector/translator/conventions"
 
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
@@ -75,6 +76,9 @@ type cascadingFilterSpanProcessor struct {
 const (
 	sourceFormat                  = "cascading_filter"
 	probabilisticFilterPolicyName = "probabilistic_filter"
+	probabilisticRuleVale = "probabilistic"
+	filteredRuleValue = "filtered"
+	AttributeSamplingRule = "sampling.rule"
 )
 
 // newTraceProcessor returns a processor.TraceProcessor that will perform Cascading Filter according to the given
@@ -276,6 +280,8 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 
 			if trace.SelectedByProbabilisticFilter {
 				updateProbabilisticRateTag(allSpans, selectedByProbabilisticFilterSpans, totalSpans)
+			} else {
+				updateFilteringTag(allSpans)
 			}
 
 			_ = tsp.nextConsumer.ConsumeTraces(tsp.ctx, allSpans)
@@ -316,6 +322,22 @@ func updateProbabilisticRateTag(traces pdata.Traces, probabilisticSpans int64, a
 				} else {
 					attrs.UpsertDouble(conventions.AttributeSamplingProbability, ratio)
 				}
+				attrs.UpsertString(AttributeSamplingRule, probabilisticRuleVale)
+			}
+		}
+	}
+}
+
+func updateFilteringTag(traces pdata.Traces) {
+	rs := traces.ResourceSpans()
+
+	for i := 0; i < rs.Len(); i++ {
+		ils := rs.At(i).InstrumentationLibrarySpans()
+		for j := 0; j < ils.Len(); j++ {
+			spans := ils.At(j).Spans()
+			for k := 0; k < spans.Len(); k++ {
+				attrs := spans.At(k).Attributes()
+				attrs.UpsertString(AttributeSamplingRule, filteredRuleValue)
 			}
 		}
 	}
@@ -392,9 +414,6 @@ func (tsp *cascadingFilterSpanProcessor) ConsumeTraces(ctx context.Context, td p
 	resourceSpans := td.ResourceSpans()
 	for i := 0; i < resourceSpans.Len(); i++ {
 		resourceSpan := resourceSpans.At(i)
-		if resourceSpan.IsNil() {
-			continue
-		}
 		tsp.processTraces(resourceSpan)
 	}
 	return nil
@@ -405,9 +424,6 @@ func (tsp *cascadingFilterSpanProcessor) groupSpansByTraceKey(resourceSpans pdat
 	ilss := resourceSpans.InstrumentationLibrarySpans()
 	for j := 0; j < ilss.Len(); j++ {
 		ils := ilss.At(j)
-		if ils.IsNil() {
-			continue
-		}
 		spansLen := ils.Spans().Len()
 		for k := 0; k < spansLen; k++ {
 			span := ils.Spans().At(k)
