@@ -27,7 +27,7 @@ it selects the traces only if the global limit is not exceeded by other policies
 
 Additionally, each of the policy might have any of the following filtering criteria defined. They are evaluated for 
 each of the trace spans. If at least one span matching all defined criteria is found, the trace is selected:
-- `numeric_attribute: {key: <name>, min_value: <min_value>, max_value: <max_value>}`: selects span my matching numeric
+- `numeric_attribute: {key: <name>, min_value: <min_value>, max_value: <max_value>}`: selects span by matching numeric
 attribute (either at resource of span level)
 - `string_attribute: {key: <name>, values: [<value1>, <value2>]}`: selects span by matching string attribute that is one
 of the provided values (either at resource of span level)

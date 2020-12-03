@@ -26,9 +26,11 @@ import (
 	"go.uber.org/zap"
 )
 
-var operationNamePattern = "foo.*"
-var minDurationMicros = int64(500)
-var minNumberOfSpans = 2
+var (
+	operationNamePattern = "foo.*"
+	minDurationMicros    = int64(500)
+	minNumberOfSpans     = 2
+)
 
 func newSpanPropertiesFilter(operationNamePattern *string, minDurationMicros *int64, minNumberOfSpans *int) (policyEvaluator, error) {
 	var operationRe *regexp.Regexp
@@ -91,11 +93,11 @@ func TestSpanPropertiesFilter(t *testing.T) {
 		Trace    *TraceData
 		Decision Decision
 	}{
-		//{
-		//	Desc:     "fully matching",
-		//	Trace:    newTraceAttrs("foobar", 1000, 100),
-		//	Decision: Sampled,
-		//},
+		{
+			Desc:     "fully matching",
+			Trace:    newTraceAttrs("foobar", 1000, 100),
+			Decision: Sampled,
+		},
 		{
 			Desc:     "nonmatching operation name",
 			Trace:    newTraceAttrs("non_matching", 1000, 100),

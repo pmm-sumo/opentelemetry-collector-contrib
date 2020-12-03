@@ -21,14 +21,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	"go.opentelemetry.io/collector/translator/conventions"
-
 	"go.opencensus.io/stats"
 	"go.opencensus.io/tag"
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/component/componenterror"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/pdata"
+	"go.opentelemetry.io/collector/translator/conventions"
 	"go.uber.org/zap"
 
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/cascadingfilterprocessor/config"
@@ -138,7 +137,7 @@ func newCascadingFilterSpanProcessor(logger *zap.Logger, nextConsumer consumer.T
 		policies = append(policies, policy)
 	}
 
-	tsp := &cascadingFilterSpanProcessor{
+	cfsp := &cascadingFilterSpanProcessor{
 		ctx:               ctx,
 		nextConsumer:      nextConsumer,
 		maxNumTraces:      cfg.NumTraces,
@@ -148,10 +147,10 @@ func newCascadingFilterSpanProcessor(logger *zap.Logger, nextConsumer consumer.T
 		policies:          policies,
 	}
 
-	tsp.policyTicker = &policyTicker{onTick: tsp.samplingPolicyOnTick}
-	tsp.deleteChan = make(chan traceKey, cfg.NumTraces)
+	cfsp.policyTicker = &policyTicker{onTick: cfsp.samplingPolicyOnTick}
+	cfsp.deleteChan = make(chan traceKey, cfg.NumTraces)
 
-	return tsp, nil
+	return cfsp, nil
 }
 
 func getPolicyEvaluator(logger *zap.Logger, cfg *config.PolicyCfg) (sampling.PolicyEvaluator, error) {
@@ -166,28 +165,28 @@ type policyMetrics struct {
 	idNotFoundOnMapCount, evaluateErrorCount, decisionSampled, decisionNotSampled int64
 }
 
-func (cp *cascadingFilterSpanProcessor) updateRate(currSecond int64, numSpans int64) sampling.Decision {
-	if cp.currentSecond != currSecond {
-		cp.currentSecond = currSecond
-		cp.spansInCurrentSecond = 0
+func (cfsp *cascadingFilterSpanProcessor) updateRate(currSecond int64, numSpans int64) sampling.Decision {
+	if cfsp.currentSecond != currSecond {
+		cfsp.currentSecond = currSecond
+		cfsp.spansInCurrentSecond = 0
 	}
 
-	spansInSecondIfSampled := cp.spansInCurrentSecond + numSpans
-	if spansInSecondIfSampled <= cp.maxSpansPerSecond {
-		cp.spansInCurrentSecond = spansInSecondIfSampled
+	spansInSecondIfSampled := cfsp.spansInCurrentSecond + numSpans
+	if spansInSecondIfSampled <= cfsp.maxSpansPerSecond {
+		cfsp.spansInCurrentSecond = spansInSecondIfSampled
 		return sampling.Sampled
 	}
 
 	return sampling.NotSampled
 }
 
-func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
+func (cfsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 	metrics := policyMetrics{}
 
 	startTime := time.Now()
-	batch, _ := tsp.decisionBatcher.CloseCurrentAndTakeFirstBatch()
+	batch, _ := cfsp.decisionBatcher.CloseCurrentAndTakeFirstBatch()
 	batchLen := len(batch)
-	tsp.logger.Debug("Sampling Policy Evaluation ticked")
+	cfsp.logger.Debug("Sampling Policy Evaluation ticked")
 
 	currSecond := time.Now().Unix()
 
@@ -196,7 +195,7 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 
 	// The first run applies decisions to batches, executing each policy separetely
 	for _, id := range batch {
-		d, ok := tsp.idToTrace.Load(traceKey(id.Bytes()))
+		d, ok := cfsp.idToTrace.Load(traceKey(id.Bytes()))
 		if !ok {
 			metrics.idNotFoundOnMapCount++
 			continue
@@ -205,21 +204,21 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 		trace.DecisionTime = time.Now()
 		totalSpans += trace.SpanCount
 
-		provisionalDecision, _ := tsp.makeProvisionalDecision(id, trace, &metrics)
+		provisionalDecision, _ := cfsp.makeProvisionalDecision(id, trace, &metrics)
 		if provisionalDecision == sampling.Sampled {
-			trace.FinalDecision = tsp.updateRate(currSecond, trace.SpanCount)
+			trace.FinalDecision = cfsp.updateRate(currSecond, trace.SpanCount)
 			if trace.FinalDecision == sampling.Sampled {
 				if trace.SelectedByProbabilisticFilter {
 					selectedByProbabilisticFilterSpans += trace.SpanCount
 				}
 				_ = stats.RecordWithTags(
-					tsp.ctx,
+					cfsp.ctx,
 					[]tag.Mutator{tag.Insert(tagCascadingFilterDecisionKey, statusSampled)},
 					statCascadingFilterDecision.M(int64(1)),
 				)
 			} else {
 				_ = stats.RecordWithTags(
-					tsp.ctx,
+					cfsp.ctx,
 					[]tag.Mutator{tag.Insert(tagCascadingFilterDecisionKey, statusExceededKey)},
 					statCascadingFilterDecision.M(int64(1)),
 				)
@@ -229,7 +228,7 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 		} else {
 			trace.FinalDecision = provisionalDecision
 			_ = stats.RecordWithTags(
-				tsp.ctx,
+				cfsp.ctx,
 				[]tag.Mutator{tag.Insert(tagCascadingFilterDecisionKey, statusNotSampled)},
 				statCascadingFilterDecision.M(int64(1)),
 			)
@@ -238,22 +237,22 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 
 	// The second run executes the decisions and makes "SecondChance" decisions in the meantime
 	for _, id := range batch {
-		d, ok := tsp.idToTrace.Load(traceKey(id.Bytes()))
+		d, ok := cfsp.idToTrace.Load(traceKey(id.Bytes()))
 		if !ok {
 			continue
 		}
 		trace := d.(*sampling.TraceData)
 		if trace.FinalDecision == sampling.SecondChance {
-			trace.FinalDecision = tsp.updateRate(currSecond, trace.SpanCount)
+			trace.FinalDecision = cfsp.updateRate(currSecond, trace.SpanCount)
 			if trace.FinalDecision == sampling.Sampled {
 				_ = stats.RecordWithTags(
-					tsp.ctx,
+					cfsp.ctx,
 					[]tag.Mutator{tag.Insert(tagCascadingFilterDecisionKey, statusSecondChanceSampled)},
 					statCascadingFilterDecision.M(int64(1)),
 				)
 			} else {
 				_ = stats.RecordWithTags(
-					tsp.ctx,
+					cfsp.ctx,
 					[]tag.Mutator{tag.Insert(tagCascadingFilterDecisionKey, statusSecondChanceExceeded)},
 					statCascadingFilterDecision.M(int64(1)),
 				)
@@ -283,19 +282,19 @@ func (tsp *cascadingFilterSpanProcessor) samplingPolicyOnTick() {
 				updateFilteringTag(allSpans)
 			}
 
-			_ = tsp.nextConsumer.ConsumeTraces(tsp.ctx, allSpans)
+			_ = cfsp.nextConsumer.ConsumeTraces(cfsp.ctx, allSpans)
 		} else {
 			metrics.decisionNotSampled++
 		}
 	}
 
-	stats.Record(tsp.ctx,
+	stats.Record(cfsp.ctx,
 		statOverallDecisionLatencyus.M(int64(time.Since(startTime)/time.Microsecond)),
 		statDroppedTooEarlyCount.M(metrics.idNotFoundOnMapCount),
 		statPolicyEvaluationErrorCount.M(metrics.evaluateErrorCount),
-		statTracesOnMemoryGauge.M(int64(atomic.LoadUint64(&tsp.numTracesOnMap))))
+		statTracesOnMemoryGauge.M(int64(atomic.LoadUint64(&cfsp.numTracesOnMap))))
 
-	tsp.logger.Debug("Sampling policy evaluation completed",
+	cfsp.logger.Debug("Sampling policy evaluation completed",
 		zap.Int("batch.len", batchLen),
 		zap.Int64("sampled", metrics.decisionSampled),
 		zap.Int64("notSampled", metrics.decisionNotSampled),
@@ -342,11 +341,11 @@ func updateFilteringTag(traces pdata.Traces) {
 	}
 }
 
-func (tsp *cascadingFilterSpanProcessor) makeProvisionalDecision(id pdata.TraceID, trace *sampling.TraceData, metrics *policyMetrics) (sampling.Decision, *Policy) {
+func (cfsp *cascadingFilterSpanProcessor) makeProvisionalDecision(id pdata.TraceID, trace *sampling.TraceData, metrics *policyMetrics) (sampling.Decision, *Policy) {
 	provisionalDecision := sampling.Unspecified
 	var matchingPolicy *Policy = nil
 
-	for i, policy := range tsp.policies {
+	for i, policy := range cfsp.policies {
 		policyEvaluateStartTime := time.Now()
 		decision, err := policy.Evaluator.Evaluate(id, trace)
 		stats.Record(
@@ -356,7 +355,7 @@ func (tsp *cascadingFilterSpanProcessor) makeProvisionalDecision(id pdata.TraceI
 		if err != nil {
 			trace.Decisions[i] = sampling.NotSampled
 			metrics.evaluateErrorCount++
-			tsp.logger.Debug("Sampling policy error", zap.Error(err))
+			cfsp.logger.Debug("Sampling policy error", zap.Error(err))
 		} else {
 			trace.Decisions[i] = decision
 
@@ -405,20 +404,20 @@ func (tsp *cascadingFilterSpanProcessor) makeProvisionalDecision(id pdata.TraceI
 }
 
 // ConsumeTraceData is required by the SpanProcessor interface.
-func (tsp *cascadingFilterSpanProcessor) ConsumeTraces(ctx context.Context, td pdata.Traces) error {
-	tsp.start.Do(func() {
-		tsp.logger.Info("First trace data arrived, starting cascading_filter timers")
-		tsp.policyTicker.Start(1 * time.Second)
+func (cfsp *cascadingFilterSpanProcessor) ConsumeTraces(ctx context.Context, td pdata.Traces) error {
+	cfsp.start.Do(func() {
+		cfsp.logger.Info("First trace data arrived, starting cascading_filter timers")
+		cfsp.policyTicker.Start(1 * time.Second)
 	})
 	resourceSpans := td.ResourceSpans()
 	for i := 0; i < resourceSpans.Len(); i++ {
 		resourceSpan := resourceSpans.At(i)
-		tsp.processTraces(resourceSpan)
+		cfsp.processTraces(resourceSpan)
 	}
 	return nil
 }
 
-func (tsp *cascadingFilterSpanProcessor) groupSpansByTraceKey(resourceSpans pdata.ResourceSpans) map[traceKey][]*pdata.Span {
+func (cfsp *cascadingFilterSpanProcessor) groupSpansByTraceKey(resourceSpans pdata.ResourceSpans) map[traceKey][]*pdata.Span {
 	idToSpans := make(map[traceKey][]*pdata.Span)
 	ilss := resourceSpans.InstrumentationLibrarySpans()
 	for j := 0; j < ilss.Len(); j++ {
@@ -428,7 +427,7 @@ func (tsp *cascadingFilterSpanProcessor) groupSpansByTraceKey(resourceSpans pdat
 			span := ils.Spans().At(k)
 			tk := traceKey(span.TraceID().Bytes())
 			if len(tk) != 16 {
-				tsp.logger.Warn("Span without valid TraceId")
+				cfsp.logger.Warn("Span without valid TraceId")
 			}
 			idToSpans[tk] = append(idToSpans[tk], &span)
 		}
@@ -436,13 +435,13 @@ func (tsp *cascadingFilterSpanProcessor) groupSpansByTraceKey(resourceSpans pdat
 	return idToSpans
 }
 
-func (tsp *cascadingFilterSpanProcessor) processTraces(resourceSpans pdata.ResourceSpans) {
+func (cfsp *cascadingFilterSpanProcessor) processTraces(resourceSpans pdata.ResourceSpans) {
 	// Group spans per their traceId to minimize contention on idToTrace
-	idToSpans := tsp.groupSpansByTraceKey(resourceSpans)
+	idToSpans := cfsp.groupSpansByTraceKey(resourceSpans)
 	var newTraceIDs int64
 	for id, spans := range idToSpans {
 		lenSpans := int64(len(spans))
-		lenPolicies := len(tsp.policies)
+		lenPolicies := len(cfsp.policies)
 		initialDecisions := make([]sampling.Decision, lenPolicies)
 		for i := 0; i < lenPolicies; i++ {
 			initialDecisions[i] = sampling.Pending
@@ -452,7 +451,7 @@ func (tsp *cascadingFilterSpanProcessor) processTraces(resourceSpans pdata.Resou
 			ArrivalTime: time.Now(),
 			SpanCount:   lenSpans,
 		}
-		d, loaded := tsp.idToTrace.LoadOrStore(id, initialTraceData)
+		d, loaded := cfsp.idToTrace.LoadOrStore(id, initialTraceData)
 
 		actualData := d.(*sampling.TraceData)
 		if loaded {
@@ -460,24 +459,24 @@ func (tsp *cascadingFilterSpanProcessor) processTraces(resourceSpans pdata.Resou
 			atomic.AddInt64(&actualData.SpanCount, lenSpans)
 		} else {
 			newTraceIDs++
-			tsp.decisionBatcher.AddToCurrentBatch(pdata.NewTraceID(id))
-			atomic.AddUint64(&tsp.numTracesOnMap, 1)
+			cfsp.decisionBatcher.AddToCurrentBatch(pdata.NewTraceID(id))
+			atomic.AddUint64(&cfsp.numTracesOnMap, 1)
 			postDeletion := false
 			currTime := time.Now()
 
 			for !postDeletion {
 				select {
-				case tsp.deleteChan <- id:
+				case cfsp.deleteChan <- id:
 					postDeletion = true
 				default:
 					// Note this is a buffered channel, so this will only delete excessive traces (if they exist)
-					traceKeyToDrop := <-tsp.deleteChan
-					tsp.dropTrace(traceKeyToDrop, currTime)
+					traceKeyToDrop := <-cfsp.deleteChan
+					cfsp.dropTrace(traceKeyToDrop, currTime)
 				}
 			}
 		}
 
-		for i, policy := range tsp.policies {
+		for i, policy := range cfsp.policies {
 			var traceTd pdata.Traces
 			actualData.Lock()
 			actualDecision := actualData.Decisions[i]
@@ -502,18 +501,18 @@ func (tsp *cascadingFilterSpanProcessor) processTraces(resourceSpans pdata.Resou
 			case sampling.Sampled:
 				// Forward the spans to the policy destinations
 				traceTd := prepareTraceBatch(resourceSpans, spans)
-				if err := tsp.nextConsumer.ConsumeTraces(policy.ctx, traceTd); err != nil {
-					tsp.logger.Warn("Error sending late arrived spans to destination",
+				if err := cfsp.nextConsumer.ConsumeTraces(policy.ctx, traceTd); err != nil {
+					cfsp.logger.Warn("Error sending late arrived spans to destination",
 						zap.String("policy", policy.Name),
 						zap.Error(err))
 				}
 				fallthrough // so OnLateArrivingSpans is also called for decision Sampled.
 			case sampling.NotSampled:
 				policy.Evaluator.OnLateArrivingSpans(actualDecision, spans)
-				stats.Record(tsp.ctx, statLateSpanArrivalAfterDecision.M(int64(time.Since(actualData.DecisionTime)/time.Second)))
+				stats.Record(cfsp.ctx, statLateSpanArrivalAfterDecision.M(int64(time.Since(actualData.DecisionTime)/time.Second)))
 
 			default:
-				tsp.logger.Warn("Encountered unexpected sampling decision",
+				cfsp.logger.Warn("Encountered unexpected sampling decision",
 					zap.String("policy", policy.Name),
 					zap.Int("decision", int(actualDecision)))
 			}
@@ -526,37 +525,37 @@ func (tsp *cascadingFilterSpanProcessor) processTraces(resourceSpans pdata.Resou
 		}
 	}
 
-	stats.Record(tsp.ctx, statNewTraceIDReceivedCount.M(newTraceIDs))
+	stats.Record(cfsp.ctx, statNewTraceIDReceivedCount.M(newTraceIDs))
 }
 
-func (tsp *cascadingFilterSpanProcessor) GetCapabilities() component.ProcessorCapabilities {
+func (cfsp *cascadingFilterSpanProcessor) GetCapabilities() component.ProcessorCapabilities {
 	return component.ProcessorCapabilities{MutatesConsumedData: false}
 }
 
 // Start is invoked during service startup.
-func (tsp *cascadingFilterSpanProcessor) Start(context.Context, component.Host) error {
+func (cfsp *cascadingFilterSpanProcessor) Start(context.Context, component.Host) error {
 	return nil
 }
 
 // Shutdown is invoked during service shutdown.
-func (tsp *cascadingFilterSpanProcessor) Shutdown(context.Context) error {
+func (cfsp *cascadingFilterSpanProcessor) Shutdown(context.Context) error {
 	return nil
 }
 
-func (tsp *cascadingFilterSpanProcessor) dropTrace(traceID traceKey, deletionTime time.Time) {
+func (cfsp *cascadingFilterSpanProcessor) dropTrace(traceID traceKey, deletionTime time.Time) {
 	var trace *sampling.TraceData
-	if d, ok := tsp.idToTrace.Load(traceID); ok {
+	if d, ok := cfsp.idToTrace.Load(traceID); ok {
 		trace = d.(*sampling.TraceData)
-		tsp.idToTrace.Delete(traceID)
+		cfsp.idToTrace.Delete(traceID)
 		// Subtract one from numTracesOnMap per https://godoc.org/sync/atomic#AddUint64
-		atomic.AddUint64(&tsp.numTracesOnMap, ^uint64(0))
+		atomic.AddUint64(&cfsp.numTracesOnMap, ^uint64(0))
 	}
 	if trace == nil {
-		tsp.logger.Error("Attempt to delete traceID not on table")
+		cfsp.logger.Error("Attempt to delete traceID not on table")
 		return
 	}
 
-	stats.Record(tsp.ctx, statTraceRemovalAgeSec.M(int64(deletionTime.Sub(trace.ArrivalTime)/time.Second)))
+	stats.Record(cfsp.ctx, statTraceRemovalAgeSec.M(int64(deletionTime.Sub(trace.ArrivalTime)/time.Second)))
 }
 
 func prepareTraceBatch(rss pdata.ResourceSpans, spans []*pdata.Span) pdata.Traces {
