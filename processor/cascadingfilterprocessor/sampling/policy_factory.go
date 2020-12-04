@@ -17,6 +17,7 @@ package sampling
 import (
 	"errors"
 	"regexp"
+	"time"
 
 	"go.uber.org/zap"
 
@@ -37,9 +38,9 @@ type policyEvaluator struct {
 	numericAttr *numericAttributeFilter
 	stringAttr  *stringAttributeFilter
 
-	operationRe       *regexp.Regexp
-	minDurationMicros *int64
-	minNumberOfSpans  *int
+	operationRe      *regexp.Regexp
+	minDuration      *time.Duration
+	minNumberOfSpans *int
 
 	currentSecond        int64
 	maxSpansPerSecond    int64
@@ -105,7 +106,7 @@ func NewFilter(logger *zap.Logger, cfg *config.PolicyCfg) (*policyEvaluator, err
 		}
 	}
 
-	if cfg.PropertiesCfg.MinDurationMicros != nil && *cfg.PropertiesCfg.MinDurationMicros < int64(0) {
+	if cfg.PropertiesCfg.MinDuration != nil && *cfg.PropertiesCfg.MinDuration < 0*time.Second {
 		return nil, errors.New("minimum span duration must be a non-negative number")
 	}
 
@@ -117,7 +118,7 @@ func NewFilter(logger *zap.Logger, cfg *config.PolicyCfg) (*policyEvaluator, err
 		stringAttr:           stringAttrFilter,
 		numericAttr:          numericAttrFilter,
 		operationRe:          operationRe,
-		minDurationMicros:    cfg.PropertiesCfg.MinDurationMicros,
+		minDuration:          cfg.PropertiesCfg.MinDuration,
 		minNumberOfSpans:     cfg.PropertiesCfg.MinNumberOfSpans,
 		logger:               logger,
 		currentSecond:        0,

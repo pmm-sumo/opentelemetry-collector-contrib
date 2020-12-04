@@ -28,11 +28,11 @@ import (
 
 var (
 	operationNamePattern = "foo.*"
-	minDurationMicros    = int64(500)
+	minDuration          = 500 * time.Microsecond
 	minNumberOfSpans     = 2
 )
 
-func newSpanPropertiesFilter(operationNamePattern *string, minDurationMicros *int64, minNumberOfSpans *int) (policyEvaluator, error) {
+func newSpanPropertiesFilter(operationNamePattern *string, minDuration *time.Duration, minNumberOfSpans *int) (policyEvaluator, error) {
 	var operationRe *regexp.Regexp
 	if operationNamePattern != nil {
 		operationRe, _ = regexp.Compile(*operationNamePattern)
@@ -41,14 +41,14 @@ func newSpanPropertiesFilter(operationNamePattern *string, minDurationMicros *in
 		logger:            zap.NewNop(),
 		operationRe:       operationRe,
 		minNumberOfSpans:  minNumberOfSpans,
-		minDurationMicros: minDurationMicros,
+		minDuration:       minDuration,
 		maxSpansPerSecond: math.MaxInt64,
 	}, nil
 }
 
 func TestPartialSpanPropertiesFilter(t *testing.T) {
 	opFilter, _ := newSpanPropertiesFilter(&operationNamePattern, nil, nil)
-	durationFilter, _ := newSpanPropertiesFilter(nil, &minDurationMicros, nil)
+	durationFilter, _ := newSpanPropertiesFilter(nil, &minDuration, nil)
 	spansFilter, _ := newSpanPropertiesFilter(nil, nil, &minNumberOfSpans)
 
 	cases := []struct {
@@ -69,8 +69,8 @@ func TestPartialSpanPropertiesFilter(t *testing.T) {
 		},
 	}
 
-	matchingTraces := newTraceAttrs("foobar", 1000, 100)
-	nonMatchingTraces := newTraceAttrs("bar", 100, 1)
+	matchingTraces := newTraceAttrs("foobar", 1000*time.Microsecond, 100)
+	nonMatchingTraces := newTraceAttrs("bar", 100*time.Microsecond, 1)
 
 	for _, c := range cases {
 		t.Run(c.Desc, func(t *testing.T) {
@@ -95,29 +95,29 @@ func TestSpanPropertiesFilter(t *testing.T) {
 	}{
 		{
 			Desc:     "fully matching",
-			Trace:    newTraceAttrs("foobar", 1000, 100),
+			Trace:    newTraceAttrs("foobar", 1000*time.Microsecond, 100),
 			Decision: Sampled,
 		},
 		{
 			Desc:     "nonmatching operation name",
-			Trace:    newTraceAttrs("non_matching", 1000, 100),
+			Trace:    newTraceAttrs("non_matching", 1000*time.Microsecond, 100),
 			Decision: NotSampled,
 		},
 		{
 			Desc:     "nonmatching duration",
-			Trace:    newTraceAttrs("foobar", 100, 100),
+			Trace:    newTraceAttrs("foobar", 100*time.Microsecond, 100),
 			Decision: NotSampled,
 		},
 		{
 			Desc:     "nonmatching number of spans",
-			Trace:    newTraceAttrs("foobar", 1000, 1),
+			Trace:    newTraceAttrs("foobar", 1000*time.Microsecond, 1),
 			Decision: NotSampled,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.Desc, func(t *testing.T) {
-			filter, _ := newSpanPropertiesFilter(&operationNamePattern, &minDurationMicros, &minNumberOfSpans)
+			filter, _ := newSpanPropertiesFilter(&operationNamePattern, &minDuration, &minNumberOfSpans)
 			u, _ := uuid.NewRandom()
 			decision, err := filter.Evaluate(pdata.NewTraceID(u), c.Trace)
 			assert.NoError(t, err)
@@ -126,9 +126,9 @@ func TestSpanPropertiesFilter(t *testing.T) {
 	}
 }
 
-func newTraceAttrs(operationName string, durationMicros int64, numberOfSpans int) *TraceData {
+func newTraceAttrs(operationName string, duration time.Duration, numberOfSpans int) *TraceData {
 	endTs := time.Now().UnixNano()
-	startTs := endTs - durationMicros*1000
+	startTs := endTs - duration.Nanoseconds()
 
 	var traceBatches []pdata.Traces
 

@@ -30,7 +30,7 @@ import (
 	"github.com/open-telemetry/opentelemetry-collector-contrib/processor/cascadingfilterprocessor/sampling"
 )
 
-var testValue = int64(10000)
+var testValue = 10 * time.Millisecond
 var cfg = tsconfig.Config{
 	ProcessorSettings:       configmodels.ProcessorSettings{},
 	DecisionWait:            2 * time.Second,
@@ -42,7 +42,7 @@ var cfg = tsconfig.Config{
 			Name:           "duration",
 			SpansPerSecond: 10,
 			PropertiesCfg: tsconfig.PropertiesCfg{
-				MinDurationMicros: &testValue,
+				MinDuration: &testValue,
 			},
 		},
 		{

@@ -36,14 +36,14 @@ processors:
           {
             name: test-policy-6,
             spans_per_second: 50,
-            properties: {min_duration_micros: 9000000 }
+            properties: {min_duration: 9s }
           },
           {
             name: test-policy-7,
             properties: {
               name_pattern: "foo.*",
               min_number_of_spans: 10,
-              min_duration_micros: 9000000
+              min_duration: 9s
             }
          },
         {

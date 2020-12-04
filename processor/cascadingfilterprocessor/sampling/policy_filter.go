@@ -103,7 +103,7 @@ func (pe *policyEvaluator) evaluateRules(_ pdata.TraceID, trace *TraceData) (Dec
 						}
 					}
 
-					if pe.minDurationMicros != nil {
+					if pe.minDuration != nil {
 						startTs := tsToMicros(span.StartTime())
 						endTs := tsToMicros(span.EndTime())
 
@@ -141,8 +141,8 @@ func (pe *policyEvaluator) evaluateRules(_ pdata.TraceID, trace *TraceData) (Dec
 	if pe.minNumberOfSpans != nil {
 		conditionMet.minSpanCount = spanCount >= *pe.minNumberOfSpans
 	}
-	if pe.minDurationMicros != nil {
-		conditionMet.minDuration = maxEndTime > minStartTime && maxEndTime-minStartTime >= *pe.minDurationMicros
+	if pe.minDuration != nil {
+		conditionMet.minDuration = maxEndTime > minStartTime && maxEndTime-minStartTime >= pe.minDuration.Microseconds()
 	}
 	if pe.numericAttr != nil {
 		conditionMet.numericAttr = matchingNumericAttrFound

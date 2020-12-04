@@ -38,8 +38,8 @@ type PolicyCfg struct {
 type PropertiesCfg struct {
 	// NamePattern (optional) describes a regular expression that must be met by any span operation name.
 	NamePattern *string `mapstructure:"name_pattern"`
-	// MinDurationMicros (optional) is the minimum duration of trace to be considered a match.
-	MinDurationMicros *int64 `mapstructure:"min_duration_micros"`
+	// MinDuration (optional) is the minimum duration of trace to be considered a match.
+	MinDuration *time.Duration `mapstructure:"min_duration"`
 	// MinNumberOfSpans (optional) is the minimum number spans that must be present in a matching trace.
 	MinNumberOfSpans *int `mapstructure:"min_number_of_spans"`
 }

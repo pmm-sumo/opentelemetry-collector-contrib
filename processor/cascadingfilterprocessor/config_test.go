@@ -39,7 +39,7 @@ func TestLoadConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
-	minDurationValue := int64(9000000)
+	minDurationValue := 9 * time.Second
 	minSpansValue := 10
 	probFilteringRatio := float32(0.1)
 	namePatternValue := "foo.*"
@@ -81,14 +81,14 @@ func TestLoadConfig(t *testing.T) {
 					Name:           "test-policy-6",
 					SpansPerSecond: 50,
 
-					PropertiesCfg: config.PropertiesCfg{MinDurationMicros: &minDurationValue},
+					PropertiesCfg: config.PropertiesCfg{MinDuration: &minDurationValue},
 				},
 				{
 					Name: "test-policy-7",
 					PropertiesCfg: config.PropertiesCfg{
-						NamePattern:       &namePatternValue,
-						MinDurationMicros: &minDurationValue,
-						MinNumberOfSpans:  &minSpansValue,
+						NamePattern:      &namePatternValue,
+						MinDuration:      &minDurationValue,
+						MinNumberOfSpans: &minSpansValue,
 					},
 				},
 				{

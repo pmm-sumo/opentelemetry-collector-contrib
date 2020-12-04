@@ -32,7 +32,8 @@ attribute (either at resource of span level)
 - `string_attribute: {key: <name>, values: [<value1>, <value2>]}`: selects span by matching string attribute that is one
 of the provided values (either at resource of span level)
 - `properties: { min_number_of_spans: <number>}`: selects the trace if it has at least provided number of spans
-- `properties: { min_duration_micros: <duration>}`: selects the span if the duration is greater or equal the given value,
+- `properties: { min_duration: <duration>}`: selects the span if the duration is greater or equal the given value 
+(use `s` or `ms` as the suffix to indicate unit)
 - `properties: { name_pattern: <regex>`}: selects the span if its operation name matches the provided regular expression
 
 ## Limiting the number of spans 
@@ -90,14 +91,14 @@ processors:
           {
             name: test-policy-6,
             spans_per_second: 50,
-            properties: {min_duration_micros: 9000000 }
+            properties: {min_duration: 9s }
           },
           {
             name: test-policy-7,
             properties: {
               name_pattern: "foo.*",
               min_number_of_spans: 10,
-              min_duration_micros: 9000000
+              min_duration: 9s
             }
          },
         {
