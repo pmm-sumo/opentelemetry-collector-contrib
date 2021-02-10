@@ -1084,6 +1084,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pmm-sumo/opentelemetry-collector v0.19.0-auth-token h1:T6cc1Oy7UJWBB6kWMt9Rf3ezC+qteweEDF36/k2tiKY=
 github.com/pmm-sumo/opentelemetry-collector v0.19.0-auth-token/go.mod h1:KZcMoF4fYwruBKDP0e3Xi4fW6sYnia0xqw+WlVQzeuA=
+github.com/pmm-sumo/opentelemetry-collector v0.19.0-sumo-pmm.0.20210210092638-fef75c710477 h1:hQBXN11wjpQXlSxLDbaHBHDQOaVfkyfs07eb5TyIG3Q=
+github.com/pmm-sumo/opentelemetry-collector v0.19.0-sumo-pmm.0.20210210092638-fef75c710477/go.mod h1:cabuduI6m0SGLzLj/YWU2m7+hQDqvsiDZL14Jj9KoMY=
 github.com/posener/complete v1.1.1/go.mod h1:em0nMJCgc9GFtwrmVmEMR/ZL6WyhyjMBndrE9hABlRI=
 github.com/posener/complete v1.2.3/go.mod h1:WZIdtGGp+qx0sLrYKtIRAruyNpv6hFCicSgv7Sy7s/s=
 github.com/pquerna/cachecontrol v0.0.0-20200819021114-67c6ae64274f h1:JDEmUDtyiLMyMlFwiaDOv2hxUp35497fkwePcLeV7j4=
