@@ -1086,6 +1086,8 @@ github.com/pmm-sumo/opentelemetry-collector v0.19.0-auth-token h1:T6cc1Oy7UJWBB6
 github.com/pmm-sumo/opentelemetry-collector v0.19.0-auth-token/go.mod h1:KZcMoF4fYwruBKDP0e3Xi4fW6sYnia0xqw+WlVQzeuA=
 github.com/pmm-sumo/opentelemetry-collector v0.19.0-sumo-pmm.0.20210210092638-fef75c710477 h1:hQBXN11wjpQXlSxLDbaHBHDQOaVfkyfs07eb5TyIG3Q=
 github.com/pmm-sumo/opentelemetry-collector v0.19.0-sumo-pmm.0.20210210092638-fef75c710477/go.mod h1:cabuduI6m0SGLzLj/YWU2m7+hQDqvsiDZL14Jj9KoMY=
+github.com/pmm-sumo/opentelemetry-collector v0.19.0-sumo-pmm.0.20210210112428-69745e98eb82 h1:G57GysfpfE/LQ7DHQeG+oVf4M9C3w/3PslgnQ8uduOk=
+github.com/pmm-sumo/opentelemetry-collector v0.19.0-sumo-pmm.0.20210210112428-69745e98eb82/go.mod h1:cabuduI6m0SGLzLj/YWU2m7+hQDqvsiDZL14Jj9KoMY=
 github.com/posener/complete v1.1.1/go.mod h1:em0nMJCgc9GFtwrmVmEMR/ZL6WyhyjMBndrE9hABlRI=
 github.com/posener/complete v1.2.3/go.mod h1:WZIdtGGp+qx0sLrYKtIRAruyNpv6hFCicSgv7Sy7s/s=
 github.com/pquerna/cachecontrol v0.0.0-20200819021114-67c6ae64274f h1:JDEmUDtyiLMyMlFwiaDOv2hxUp35497fkwePcLeV7j4=

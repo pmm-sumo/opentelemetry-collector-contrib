@@ -65,7 +65,7 @@ require (
 	golang.org/x/sys v0.0.0-20201214210602-f9fddec55a1e
 )
 
-replace go.opentelemetry.io/collector => github.com/pmm-sumo/opentelemetry-collector v0.19.0-sumo-pmm.0.20210210092638-fef75c710477
+replace go.opentelemetry.io/collector => github.com/pmm-sumo/opentelemetry-collector v0.19.0-sumo-pmm.0.20210210112428-69745e98eb82
 
 // Replace references to modules that are in this repository with their relateive paths
 // so that we always build with current (latest) version of the source code.
