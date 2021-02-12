@@ -62,7 +62,11 @@ func (atsp *adjustTsProcessor) ProcessTraces(ctx context.Context, td pdata.Trace
 }
 
 func adjustTimestamp(tun pdata.TimestampUnixNano, delta time.Duration) pdata.TimestampUnixNano {
-	return tun + pdata.TimestampUnixNano(delta.Nanoseconds())
+	if delta > 0 {
+		return tun + pdata.TimestampUnixNano(delta.Nanoseconds())
+	} else {
+		return tun - pdata.TimestampUnixNano(-delta.Nanoseconds())
+	}
 }
 
 func (atsp *adjustTsProcessor) adjustSpan(span pdata.Span, receiveTs time.Time, exportTs *time.Time) {
