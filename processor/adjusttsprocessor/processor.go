@@ -36,8 +36,8 @@ type adjustTsProcessor struct {
 }
 
 var (
-	// Anything outside these dates is considered not a misconfigured clock but rather a problem with exported timestamp
-	minSaneExportTs = time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC)
+	// Anything outside these dates is considered not a misconfigured clock but rather a problem with timestamp
+	minSaneExportTs = time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
 	maxSaneExportTs = time.Now().Add(10 * time.Hour * 24 * 365)
 )
 
@@ -52,8 +52,8 @@ func newAdjustTsProcessor(logger *zap.Logger, config Config) *adjustTsProcessor 
 
 func (atsp *adjustTsProcessor) ProcessTraces(ctx context.Context, td pdata.Traces) (pdata.Traces, error) {
 	cc, ok := client.FromContext(ctx)
-	if !ok {
-		stats.Record(context.Background(), mSpansMissingExportTs.M(int64(td.SpanCount())))
+	if !ok || sanitizeTimestamp(&cc.ReceiveTS) == nil {
+		stats.Record(context.Background(), mSpansMissingReceiveTs.M(int64(td.SpanCount())))
 	} else {
 		atsp.adjustExportTimestamp(td, cc.ReceiveTS)
 	}
