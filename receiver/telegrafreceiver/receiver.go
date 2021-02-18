@@ -23,9 +23,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 
 	"go.uber.org/zap"
-
-	"github.com/pmalek-sumo/telegraf"
-	telegrafagent "github.com/pmalek-sumo/telegraf/agent"
+	"github.com/influxdata/telegraf"
+	telegrafagent "github.com/influxdata/telegraf/agent"
 )
 
 type telegrafreceiver struct {

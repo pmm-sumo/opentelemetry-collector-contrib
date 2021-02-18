@@ -23,8 +23,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/receiver/receiverhelper"
 
-	telegrafagent "github.com/pmalek-sumo/telegraf/agent"
-	telegrafconfig "github.com/pmalek-sumo/telegraf/config"
+	telegrafagent "github.com/influxdata/telegraf/agent"
+	telegrafconfig "github.com/influxdata/telegraf/config"
 )
 
 const (

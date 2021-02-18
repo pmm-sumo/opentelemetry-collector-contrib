@@ -66,6 +66,8 @@ require (
 
 replace go.opentelemetry.io/collector => github.com/SumoLogic/opentelemetry-collector v0.19.0-sumo
 
+replace github.com/influxdata/telegraf => github.com/pmm-sumo/telegraf v1.17.3-test2
+
 // Replace references to modules that are in this repository with their relateive paths
 // so that we always build with current (latest) version of the source code.
 

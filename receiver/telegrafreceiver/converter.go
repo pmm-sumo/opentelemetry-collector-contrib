@@ -19,7 +19,7 @@ import (
 
 	"go.opentelemetry.io/collector/consumer/pdata"
 
-	"github.com/pmalek-sumo/telegraf"
+	"github.com/influxdata/telegraf"
 )
 
 const (
