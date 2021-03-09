@@ -9,4 +9,4 @@ require (
 	go.uber.org/zap v1.16.0
 )
 
-replace go.opentelemetry.io/collector => github.com/pmm-sumo/opentelemetry-collector v0.19.0-auth-token
+replace go.opentelemetry.io/collector => github.com/pmm-sumo/opentelemetry-collector v0.19.1-auth-token
