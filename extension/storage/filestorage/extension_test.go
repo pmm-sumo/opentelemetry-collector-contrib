@@ -23,10 +23,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/collector/component"
+	"go.opentelemetry.io/collector/extension/storage"
 	"go.opentelemetry.io/collector/config"
 	"go.uber.org/zap/zaptest"
-
-	"github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage"
 )
 
 func TestExtensionIntegrity(t *testing.T) {

@@ -14,4 +14,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
+
+replace go.opentelemetry.io/collector => github.com/pmm-sumo/opentelemetry-collector v0.29.0-pq1
 replace github.com/open-telemetry/opentelemetry-collector-contrib/extension/storage => ../../extension/storage
